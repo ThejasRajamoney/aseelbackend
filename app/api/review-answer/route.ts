@@ -26,6 +26,31 @@ function shouldUseMockFallback() {
   return process.env.VERCEL !== '1';
 }
 
+function buildOpenAiErrorMessage(status: number, data: unknown) {
+  const message =
+    data && typeof data === 'object' && 'error' in data && data.error && typeof (data as { error?: { message?: unknown } }).error?.message === 'string'
+      ? (data as { error: { message: string } }).error.message
+      : '';
+
+  if (status === 401 || status === 403) {
+    return 'OpenAI authentication failed. Check the API key configured in Vercel.';
+  }
+
+  if (status === 429) {
+    return 'OpenAI quota was exceeded. Add billing or try again later.';
+  }
+
+  if (status >= 500) {
+    return 'OpenAI is temporarily unavailable. Try again later.';
+  }
+
+  if (status >= 400) {
+    return message || 'OpenAI request was rejected. Check the model and request format.';
+  }
+
+  return message || 'OpenAI request failed.';
+}
+
 function normalizeRequest(body: unknown): AnswerReviewRequest | null {
   if (!body || typeof body !== 'object') {
     return null;
@@ -196,7 +221,7 @@ async function resolveReview(requestBody: AnswerReviewRequest): Promise<AnswerRe
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(data?.error?.message || 'OpenAI request failed');
+      throw new Error(buildOpenAiErrorMessage(response.status, data));
     }
 
     const raw = data?.choices?.[0]?.message?.content;
@@ -229,7 +254,7 @@ async function resolveReview(requestBody: AnswerReviewRequest): Promise<AnswerRe
     }
 
     console.error('OpenAI review failed', error);
-    throw new Error('The answer review service is temporarily unavailable.');
+    throw error instanceof Error ? error : new Error('The answer review service is temporarily unavailable.');
   }
 }
 
