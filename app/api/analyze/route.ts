@@ -93,11 +93,19 @@ function resolveOpenAiApiKey() {
   return '';
 }
 
+function shouldUseMockFallback() {
+  return process.env.VERCEL !== '1';
+}
+
 async function resolveAnalysis(requestBody: AnalyzeRequest): Promise<AnalysisResult> {
   const apiKey = resolveOpenAiApiKey();
 
   if (!apiKey) {
-    return normalizeAnalysisResult(buildMockAnalysis(requestBody));
+    if (shouldUseMockFallback()) {
+      return normalizeAnalysisResult(buildMockAnalysis(requestBody));
+    }
+
+    throw new Error('OpenAI is not configured for this deployment.');
   }
 
   try {
@@ -162,8 +170,13 @@ Return ONLY the JSON object, no other text.`;
     }
 
     return normalizeAnalysisResult(tryParseAnalysis(rawText));
-  } catch {
-    return normalizeAnalysisResult(buildMockAnalysis(requestBody));
+  } catch (error) {
+    if (shouldUseMockFallback()) {
+      return normalizeAnalysisResult(buildMockAnalysis(requestBody));
+    }
+
+    console.error('OpenAI analysis failed', error);
+    throw new Error('The analysis service is temporarily unavailable.');
   }
 }
 
@@ -198,13 +211,23 @@ export async function POST(request: NextRequest) {
     studentName: currentUser.name,
   };
 
-  const analysis = await resolveAnalysis(requestBody);
-
   try {
-    await saveAnalysisSubmission(requestBody, analysis);
-  } catch (error) {
-    console.error('Failed to persist analysis', error);
-  }
+    const analysis = await resolveAnalysis(requestBody);
 
-  return NextResponse.json(analysis);
+    try {
+      await saveAnalysisSubmission(requestBody, analysis);
+    } catch (error) {
+      console.error('Failed to persist analysis', error);
+    }
+
+    return NextResponse.json(analysis);
+  } catch (error) {
+    console.error('Analysis failed', error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'The analysis service is temporarily unavailable.',
+      },
+      { status: 503 },
+    );
+  }
 }

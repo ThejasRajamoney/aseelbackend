@@ -148,24 +148,62 @@ function toTitleCasePhrase(words: string[]) {
     .trim();
 }
 
+const keywordNoise = new Set([
+  'fascinating',
+  'interesting',
+  'important',
+  'significant',
+  'main',
+  'overall',
+  'various',
+  'different',
+  'many',
+  'more',
+  'most',
+  'some',
+  'much',
+  'first',
+  'second',
+  'third',
+  'one',
+  'two',
+  'three',
+  'about',
+  'section',
+  'idea',
+  'point',
+  'topic',
+  'things',
+  'thing',
+  'known',
+  'clear',
+  'strong',
+  'simple',
+  'basic',
+]);
+
+function pickQuestionKeywords(excerpt: string, language: AnalysisLanguage) {
+  return extractKeywords(excerpt, language).filter((word) => !keywordNoise.has(word));
+}
+
 function buildQuestions(excerpt: string, subject: string, language: AnalysisLanguage) {
-  const keywords = extractKeywords(excerpt, language);
-  const focus = toTitleCasePhrase(keywords.slice(0, 2)) || subject;
-  const detail = toTitleCasePhrase(keywords.slice(1, 3)) || focus;
-  const evidenceTarget = toTitleCasePhrase(keywords.slice(2, 4)) || subject;
+  const keywords = pickQuestionKeywords(excerpt, language);
+  const focus = keywords[0] || subject;
+  const detail = keywords[1] || focus;
+  const evidenceTarget = keywords[2] || detail;
 
   if (language === 'ar') {
     return [
-      `ما الذي يجعل "${focus}" مهمًا في هذه الفقرة؟`,
-      `كيف يرتبط "${detail}" بالفكرة الرئيسية في عملك؟`,
+      `ما الفكرة الرئيسية حول "${focus}" في هذا الجزء؟`,
+      `لماذا يهمُّ التفصيل المتعلق بـ"${detail}" هنا؟`,
       `ما المثال أو الدليل الذي يمكن أن يقوي فكرتك عن "${evidenceTarget}"؟`,
     ];
   }
 
   return [
-    `What does "${focus}" add to your main point here?`,
-    `Why is "${detail}" important to this section?`,
-    `What evidence or example would make your idea about "${evidenceTarget}" stronger?`,
+    `What is the main idea about "${focus}" in this section?`,
+    `Why does the detail about "${detail}" matter here?`,
+    `What example or fact would make your idea about "${evidenceTarget}" stronger?`,
   ];
 }
 

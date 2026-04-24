@@ -15,6 +15,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
+import { getCurrentAuthUser } from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: 'Aseel | AI Academic Integrity Coach',
@@ -88,6 +89,9 @@ const ethicsPoints = [
 ];
 
 export default function HomePage() {
+  const currentUser = getCurrentAuthUser();
+  const showTeacherDashboard = currentUser?.role === 'teacher';
+
   return (
     <main>
       <Navbar />
@@ -113,9 +117,11 @@ export default function HomePage() {
                 Try As Student
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link href="/auth?role=teacher&next=/teacher" className="aseel-button-ghost w-full sm:w-auto">
-                View Teacher Dashboard
-              </Link>
+              {showTeacherDashboard ? (
+                <Link href="/teacher" className="aseel-button-ghost w-full sm:w-auto">
+                  View Teacher Dashboard
+                </Link>
+              ) : null}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -414,7 +420,9 @@ export default function HomePage() {
 
           <div className="flex flex-wrap items-center gap-4 text-sm text-[color:var(--text-secondary)]">
             <Link href="/auth?role=student&next=/student" className="transition hover:text-[color:var(--text-primary)]">Student Mode</Link>
-            <Link href="/auth?role=teacher&next=/teacher" className="transition hover:text-[color:var(--text-primary)]">Teacher Dashboard</Link>
+            {showTeacherDashboard ? (
+              <Link href="/teacher" className="transition hover:text-[color:var(--text-primary)]">Teacher Dashboard</Link>
+            ) : null}
             <Link href="/auth?role=student&next=/declare" className="transition hover:text-[color:var(--text-primary)]">AI Declaration</Link>
             <span className="hidden h-4 w-px bg-[color:var(--border)] sm:block" />
             <span>Built for Safe AI Cup 2026 · UAE</span>

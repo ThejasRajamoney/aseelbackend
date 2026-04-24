@@ -22,6 +22,10 @@ function resolveOpenAiApiKey() {
   return '';
 }
 
+function shouldUseMockFallback() {
+  return process.env.VERCEL !== '1';
+}
+
 function normalizeRequest(body: unknown): AnswerReviewRequest | null {
   if (!body || typeof body !== 'object') {
     return null;
@@ -157,7 +161,11 @@ async function resolveReview(requestBody: AnswerReviewRequest): Promise<AnswerRe
   const apiKey = resolveOpenAiApiKey();
 
   if (!apiKey) {
-    return buildFallbackReview(requestBody);
+    if (shouldUseMockFallback()) {
+      return buildFallbackReview(requestBody);
+    }
+
+    throw new Error('OpenAI is not configured for this deployment.');
   }
 
   try {
@@ -215,8 +223,13 @@ async function resolveReview(requestBody: AnswerReviewRequest): Promise<AnswerRe
       improvement: parsed.improvement,
       isPerfect: parsed.isPerfect === true,
     };
-  } catch {
-    return buildFallbackReview(requestBody);
+  } catch (error) {
+    if (shouldUseMockFallback()) {
+      return buildFallbackReview(requestBody);
+    }
+
+    console.error('OpenAI review failed', error);
+    throw new Error('The answer review service is temporarily unavailable.');
   }
 }
 
@@ -237,7 +250,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
   }
 
-  const review = await resolveReview(body);
+  try {
+    const review = await resolveReview(body);
 
-  return NextResponse.json(review);
+    return NextResponse.json(review);
+  } catch (error) {
+    console.error('Review failed', error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'The answer review service is temporarily unavailable.',
+      },
+      { status: 503 },
+    );
+  }
 }
