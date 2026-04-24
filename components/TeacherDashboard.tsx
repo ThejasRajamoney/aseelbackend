@@ -19,7 +19,7 @@ import {
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { PrivacyBanner } from '@/components/PrivacyBanner';
-import { buildStudentInviteLink } from '@/lib/invite';
+import { buildStudentInviteLink, resolveAppOrigin } from '@/lib/invite';
 import type { AuthUser, StudentInviteEmailResult, TeacherDashboardData, TeacherStudentRow } from '@/lib/types';
 import {
   teacherResources,
@@ -307,7 +307,7 @@ function StudentsSection({ dashboard }: { dashboard: TeacherDashboardData }) {
   const [status, setStatus] = useState('');
 
   function buildInviteLink(student: TeacherStudentRow) {
-    return buildStudentInviteLink(window.location.origin, student);
+    return buildStudentInviteLink(resolveAppOrigin(window.location.origin), student);
   }
 
   async function sendInvite(student: TeacherStudentRow, options?: { quiet?: boolean }) {

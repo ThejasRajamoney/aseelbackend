@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_SESSION_COOKIE, getAuthUserFromSession } from '@/lib/auth';
-import { buildStudentInviteLink } from '@/lib/invite';
+import { buildStudentInviteLink, resolveAppOrigin } from '@/lib/invite';
 import { sendStudentInviteEmail } from '@/lib/email';
 import { getTeacherStudentById } from '@/lib/student-store';
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, { params }: { params: { student
   }
 
   try {
-    const inviteUrl = buildStudentInviteLink(new URL(request.url).origin, student);
+    const inviteUrl = buildStudentInviteLink(resolveAppOrigin(new URL(request.url).origin), student);
     const result = await sendStudentInviteEmail({
       teacherName: teacher.name,
       teacherEmail: teacher.email,
