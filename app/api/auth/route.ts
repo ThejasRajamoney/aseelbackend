@@ -71,15 +71,17 @@ export async function POST(request: NextRequest) {
         : authenticateAuthUser({
             email: body.email,
             password: body.password,
+            role: body.role,
+            name: body.name,
           });
 
     if (!user) {
       return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
     }
 
-    const { sessionId } = createAuthSession(user.id);
+    const { token } = createAuthSession(user);
     const response = NextResponse.json<AuthSessionResponse>({ user });
-    setAuthCookie(response, sessionId);
+    setAuthCookie(response, token);
     return response;
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Authentication failed.' }, { status: 400 });

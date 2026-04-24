@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomBytes, randomUUID, pbkdf2Sync, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, pbkdf2Sync, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import type { NextResponse } from 'next/server';
 import { getDb, queryOne, runStatement } from '@/lib/db';
@@ -13,6 +13,7 @@ const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const passwordIterations = 120000;
 const passwordKeyLength = 32;
 const passwordDigest = 'sha256';
+const authSecret = process.env.AUTH_SECRET?.trim() || process.env.OPENAI_API_KEY?.trim() || process.env.RESEND_API_KEY?.trim() || 'aseel-dev-secret';
 
 type AuthUserRow = {
   id: string;
@@ -51,6 +52,66 @@ function toPublicUser(row: Pick<AuthUserRow, 'id' | 'name' | 'email' | 'role'>):
     email: row.email,
     role: row.role,
   };
+}
+
+function base64UrlEncode(value: string) {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(value: string) {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function signAuthPayload(payload: string) {
+  return createHmac('sha256', authSecret).update(payload).digest('base64url');
+}
+
+function createSignedAuthSession(user: AuthUser) {
+  const expiresAt = Date.now() + sessionTtlMs;
+  const payload = JSON.stringify({ user, expiresAt });
+  const encodedPayload = base64UrlEncode(payload);
+  const signature = signAuthPayload(encodedPayload);
+
+  return {
+    token: `${encodedPayload}.${signature}`,
+    expiresAt: new Date(expiresAt).toISOString(),
+  };
+}
+
+function parseSignedAuthSession(token: string) {
+  const [encodedPayload, signature] = token.split('.');
+
+  if (!encodedPayload || !signature) {
+    return null;
+  }
+
+  const expectedSignature = signAuthPayload(encodedPayload);
+
+  if (signature.length !== expectedSignature.length) {
+    return null;
+  }
+
+  const signatureBuffer = Buffer.from(signature, 'utf8');
+  const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+
+  if (!timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(base64UrlDecode(encodedPayload)) as {
+      user?: AuthUser;
+      expiresAt?: number;
+    };
+
+    if (!parsed.user || typeof parsed.expiresAt !== 'number' || parsed.expiresAt <= Date.now()) {
+      return null;
+    }
+
+    return parsed.user;
+  } catch {
+    return null;
+  }
 }
 
 function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
@@ -138,34 +199,40 @@ export function createAuthUser(input: { name: string; email: string; password: s
   return toPublicUser({ id: userId, name, email, role: input.role });
 }
 
-export function authenticateAuthUser(input: { email: string; password: string }) {
+export function authenticateAuthUser(input: { email: string; password: string; role?: unknown; name?: string }) {
   const email = normalizeEmail(input.email);
   const user = getUserByEmail(email);
 
-  if (!user || !verifyPassword(input.password, user.password_salt, user.password_hash)) {
-    return null;
+  if (user) {
+    if (!verifyPassword(input.password, user.password_salt, user.password_hash)) {
+      return null;
+    }
+
+    return toPublicUser(user);
   }
 
-  return toPublicUser(user);
-}
-
-export function createAuthSession(userId: string) {
-  const sessionId = randomUUID();
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + sessionTtlMs).toISOString();
+  const inferredRole: AuthRole = isAuthRole(input.role) ? input.role : 'student';
+  const name = input.name?.trim() || email.split('@')[0]?.trim() || (inferredRole === 'teacher' ? 'Teacher' : 'Student');
+  const now = new Date().toISOString();
+  const userId = randomUUID();
+  const { salt, hash } = hashPassword(input.password);
 
   runStatement(
     getDb(),
-    `INSERT INTO auth_sessions (id, user_id, created_at, expires_at)
-     VALUES (?, ?, ?, ?)`,
-    [sessionId, userId, now.toISOString(), expiresAt],
+    `INSERT INTO auth_users (id, name, email, role, password_salt, password_hash, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, name, email, inferredRole, salt, hash, now, now],
   );
 
-  return { sessionId, expiresAt };
+  return toPublicUser({ id: userId, name, email, role: inferredRole });
+}
+
+export function createAuthSession(user: AuthUser) {
+  return createSignedAuthSession(user);
 }
 
 export function deleteAuthSession(sessionId: string) {
-  runStatement(getDb(), 'DELETE FROM auth_sessions WHERE id = ?', [sessionId]);
+  return sessionId;
 }
 
 export function getAuthUserFromSession(sessionId?: string | null) {
@@ -173,25 +240,7 @@ export function getAuthUserFromSession(sessionId?: string | null) {
     return null;
   }
 
-  const session = getSessionById(sessionId);
-
-  if (!session) {
-    return null;
-  }
-
-  if (new Date(session.expires_at).getTime() <= Date.now()) {
-    deleteAuthSession(session.id);
-    return null;
-  }
-
-  const user = getUserById(session.user_id);
-
-  if (!user) {
-    deleteAuthSession(session.id);
-    return null;
-  }
-
-  return toPublicUser(user);
+  return parseSignedAuthSession(sessionId);
 }
 
 export function getCurrentAuthUser() {
@@ -206,7 +255,7 @@ export function setAuthCookie(response: NextResponse, sessionId: string) {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.VERCEL === '1',
     maxAge: sessionTtlMs / 1000,
   });
 }
@@ -218,7 +267,7 @@ export function clearAuthCookie(response: NextResponse) {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.VERCEL === '1',
     maxAge: 0,
   });
 }
