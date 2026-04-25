@@ -66,9 +66,14 @@ export function DeclarationGenerator({ initialStudentName = '' }: DeclarationGen
 
   async function handleCopy() {
     const text = generated || buildDeclarationText(studentName, assignmentTitle, subject, selectedUses, description);
-    await navigator.clipboard.writeText(text);
-    setCopyStatus('copied');
-    window.setTimeout(() => setCopyStatus('idle'), 1400);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus('copied');
+      window.setTimeout(() => setCopyStatus('idle'), 1400);
+    } catch (error) {
+      console.error('Could not copy declaration', error);
+      setCopyStatus('idle');
+    }
   }
 
   function handlePrint() {

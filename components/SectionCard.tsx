@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, ChevronDown, ChevronUp, Loader2, MessageSquareText, Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AnalysisLanguage, AnalysisSection, AnswerReviewResult } from '@/lib/types';
 import { ConcernBadge } from '@/components/ConcernBadge';
 
@@ -19,6 +19,7 @@ export function SectionCard({ section, subject, language }: SectionCardProps) {
     section.questions.map(() => null),
   );
   const [reviewingIndex, setReviewingIndex] = useState<number | null>(null);
+  const answersRef = useRef(answers);
 
   useEffect(() => {
     setAnswers(section.questions.map(() => ''));
@@ -26,12 +27,17 @@ export function SectionCard({ section, subject, language }: SectionCardProps) {
     setReviewingIndex(null);
   }, [section.id, section.questions]);
 
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
   async function handleAnalyze(index: number) {
     const answer = answers[index].trim();
     if (!answer) {
       return;
     }
 
+    const submittedAnswer = answer;
     setReviewingIndex(index);
 
     try {
@@ -63,12 +69,20 @@ export function SectionCard({ section, subject, language }: SectionCardProps) {
         throw new Error('Unexpected review response');
       }
 
+      if (answersRef.current[index].trim() !== submittedAnswer) {
+        return;
+      }
+
       setReviews((current) => {
         const next = [...current];
         next[index] = data;
         return next;
       });
     } catch {
+      if (answersRef.current[index].trim() !== submittedAnswer) {
+        return;
+      }
+
       setReviews((current) => {
         const next = [...current];
         next[index] = {
@@ -79,7 +93,7 @@ export function SectionCard({ section, subject, language }: SectionCardProps) {
         return next;
       });
     } finally {
-      setReviewingIndex(null);
+      setReviewingIndex((current) => (current === index ? null : current));
     }
   }
 
@@ -134,7 +148,7 @@ export function SectionCard({ section, subject, language }: SectionCardProps) {
             <div className="mt-4 space-y-3 border-t border-[color:var(--border)] pt-4">
               {section.questions.map((question, index) => (
                 <div
-                  key={question}
+                  key={`${section.id}-${index}`}
                   className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-primary)]/50 p-4"
                 >
                   <div className="flex items-start gap-3">
@@ -146,16 +160,25 @@ export function SectionCard({ section, subject, language }: SectionCardProps) {
                         <MessageSquareText className="h-4 w-4 text-[color:var(--accent-gold)]" />
                         <span className="min-w-0 break-words">{question}</span>
                       </div>
-                      <textarea
-                        value={answers[index]}
-                        onChange={(event) => {
-                          const nextAnswers = [...answers];
-                          nextAnswers[index] = event.target.value;
-                          setAnswers(nextAnswers);
-                        }}
-                        placeholder="Type your answer in your own words..."
-                        className="aseel-input mt-3 min-h-[96px] resize-y sm:min-h-[108px]"
-                      />
+                        <textarea
+                          value={answers[index]}
+                          onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setAnswers((current) => {
+                            const nextAnswers = [...current];
+                            nextAnswers[index] = nextValue;
+                            return nextAnswers;
+                          });
+                          setReviews((current) => {
+                            const nextReviews = [...current];
+                            nextReviews[index] = null;
+                            return nextReviews;
+                          });
+                          setReviewingIndex((current) => (current === index ? null : current));
+                          }}
+                          placeholder="Type your answer in your own words..."
+                          className="aseel-input mt-3 min-h-[96px] resize-y sm:min-h-[108px]"
+                        />
                       <div className="mt-3 flex flex-wrap gap-3">
                         <button
                           type="button"

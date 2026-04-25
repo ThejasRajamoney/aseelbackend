@@ -17,7 +17,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import Link from 'next/link';
-import { type FormEvent, useState } from 'react';
+import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useState } from 'react';
 import { PrivacyBanner } from '@/components/PrivacyBanner';
 import { buildStudentInviteLink, resolveAppOrigin } from '@/lib/invite';
 import type { AuthUser, StudentInviteEmailResult, TeacherDashboardData, TeacherStudentRow } from '@/lib/types';
@@ -297,8 +297,13 @@ function SubjectBreakdownSection({ dashboard }: { dashboard: TeacherDashboardDat
   );
 }
 
-function StudentsSection({ dashboard }: { dashboard: TeacherDashboardData }) {
-  const [students, setStudents] = useState<TeacherStudentRow[]>(dashboard.students);
+function StudentsSection({
+  students,
+  setStudents,
+}: {
+  students: TeacherStudentRow[];
+  setStudents: Dispatch<SetStateAction<TeacherStudentRow[]>>;
+}) {
   const [studentName, setStudentName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -416,8 +421,12 @@ function StudentsSection({ dashboard }: { dashboard: TeacherDashboardData }) {
 
   async function handleCopyLink(student: TeacherStudentRow) {
     const inviteLink = buildInviteLink(student);
-    await navigator.clipboard.writeText(inviteLink);
-    setStatus(`Signup link copied for ${student.email}.`);
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setStatus(`Signup link copied for ${student.email}.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not copy signup link.');
+    }
   }
 
   const activeCount = students.filter((student) => student.status === 'active').length;
@@ -638,6 +647,12 @@ export function TeacherDashboard(props: TeacherDashboardProps) {
 function TeacherDashboardView({ data, currentUser }: TeacherDashboardProps) {
   const dashboard = data ?? fallbackDashboardData;
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [students, setStudents] = useState<TeacherStudentRow[]>(dashboard.students);
+
+  useEffect(() => {
+    setStudents(dashboard.students);
+  }, [dashboard.students]);
+
   return (
     <div className="min-h-screen bg-[color:var(--bg-primary)] lg:grid lg:grid-cols-[280px_1fr]">
       <aside className="hidden border-r border-[color:var(--border)] bg-[color:var(--bg-secondary)]/30 px-5 py-6 backdrop-blur lg:flex lg:flex-col">
@@ -720,7 +735,16 @@ function TeacherDashboardView({ data, currentUser }: TeacherDashboardProps) {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Link href="#students" className="aseel-button-gold w-full sm:w-auto">
+                <Link
+                  href="#students"
+                  onClick={(event) => {
+                    if (window.matchMedia('(max-width: 1023px)').matches) {
+                      event.preventDefault();
+                      setActiveTab('students');
+                    }
+                  }}
+                  className="aseel-button-gold w-full sm:w-auto"
+                >
                   Add Students
                   <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -746,7 +770,7 @@ function TeacherDashboardView({ data, currentUser }: TeacherDashboardProps) {
                 ) : null}
                 {activeTab === 'students' ? (
                   <motion.div key="students" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}>
-                    <StudentsSection dashboard={dashboard} />
+                    <StudentsSection students={students} setStudents={setStudents} />
                   </motion.div>
                 ) : null}
                 {activeTab === 'resources' ? (
@@ -761,7 +785,7 @@ function TeacherDashboardView({ data, currentUser }: TeacherDashboardProps) {
               <OverviewSection dashboard={dashboard} />
               <ReportsSection dashboard={dashboard} />
               <SubjectBreakdownSection dashboard={dashboard} />
-              <StudentsSection dashboard={dashboard} />
+              <StudentsSection students={students} setStudents={setStudents} />
               <ResourcesSection />
             </div>
           </div>
