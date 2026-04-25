@@ -1,1 +1,9 @@
-
+.next
+node_modules
+.env.local
+.env.*.local
+data/
+*.sqlite
+coverage
+dist
+*.log
